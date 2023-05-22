@@ -23,7 +23,7 @@ public class LevelRendererMixin {
 
     @Inject(method = "close()V", at = @At("TAIL"))
     private void close(CallbackInfo info) {
-        FogManager.getDensityManager().close();
+//        FogManager.getDensityManager().close();
         FogManager.densityManager = null;
     }
 

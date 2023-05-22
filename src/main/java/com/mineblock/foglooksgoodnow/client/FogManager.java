@@ -21,14 +21,9 @@ import org.jetbrains.annotations.Nullable;
 import java.util.*;
 
 public class FogManager {
+
     @Nullable
     public static FogManager densityManager;
-    public static FogManager getDensityManager() {
-        return Objects.requireNonNull(densityManager, "Attempted to call getDensityManager before it finished loading!");
-    }
-    public static Optional<FogManager> getDensityManagerOptional() {
-        return Optional.ofNullable(densityManager);
-    }
 
     private final Minecraft mc;
     public InterpolatedValue fogStart;
@@ -39,6 +34,7 @@ public class FogManager {
     public InterpolatedValue undergroundness;
     public InterpolatedValue darkness;
     public InterpolatedValue[] caveFogColors;
+    public InterpolatedValue caveFogStart;
 
     private Map<String, BiomeFogDensity> configMap;
 
@@ -49,6 +45,7 @@ public class FogManager {
         this.mc = Minecraft.getInstance();
         this.fogStart = new InterpolatedValue(0.0F);
         this.fogEnd = new InterpolatedValue(1.0F);
+        this.caveFogStart = new InterpolatedValue(0.0F);
 
         this.currentSkyLight = new InterpolatedValue(16.0F);
         this.currentBlockLight = new InterpolatedValue(16.0F);
@@ -56,9 +53,9 @@ public class FogManager {
         this.undergroundness = new InterpolatedValue(0.0F, 0.02f);
         this.darkness = new InterpolatedValue(0.0F, 0.1f);
         this.caveFogColors = new InterpolatedValue[3];
-        this.caveFogColors[0] =  new InterpolatedValue(1.0F);
-        this.caveFogColors[1] =  new InterpolatedValue(1.0F);
-        this.caveFogColors[2] =  new InterpolatedValue(1.0F);
+        this.caveFogColors[0] = new InterpolatedValue(1.0F);
+        this.caveFogColors[1] = new InterpolatedValue(1.0F);
+        this.caveFogColors[2] = new InterpolatedValue(1.0F);
 
         this.configMap = new HashMap<>();
     }
@@ -67,7 +64,9 @@ public class FogManager {
         FLG.LOGGER.info("Initialized Config Values");
         this.fogStart.setDefaultValue(FLG.CONFIG.defaultFogStart());
         this.fogEnd.setDefaultValue(FLG.CONFIG.defaultFogDensity());
+        this.caveFogStart.setDefaultValue(FLG.CONFIG.caveFogStart());
         this.useCaveFog = FLG.CONFIG.useCaveFog();
+
         this.caveFogMultiplier = FLG.CONFIG.caveFogDensity();
         this.configMap = new HashMap<>();
 
@@ -91,9 +90,11 @@ public class FogManager {
 
         BiomeFogDensity currentDensity = configMap.get(key.toString());
         boolean isFogDense = this.mc.level.effects().isFoggyAt(pos.getX(), pos.getZ()) || this.mc.gui.getBossOverlay().shouldCreateWorldFog();
-        float density = isFogDense? 0.9F : 1.0F;
+        float density = isFogDense ? 0.9F : 1.0F;
 
         float[] darknessAffectedFog;
+
+        boolean isAboveGround =  pos.getY() > mc.level.getHeight(Heightmap.Types.WORLD_SURFACE, pos.getX(), pos.getZ()) || pos.getY() > mc.level.getSeaLevel();
 
         if (currentDensity != null) {
             darknessAffectedFog = getDarknessEffectedFog(currentDensity.fogStart(), currentDensity.fogDensity() * density);
@@ -102,7 +103,7 @@ public class FogManager {
             this.caveFogColors[1].interpolate(caveFogColor.y);
             this.caveFogColors[2].interpolate(caveFogColor.z);
         } else {
-            darknessAffectedFog = getDarknessEffectedFog(this.fogStart.defaultValue, this.fogEnd.defaultValue * density);
+            darknessAffectedFog = getDarknessEffectedFog(isAboveGround ? this.fogStart.defaultValue : this.caveFogStart.defaultValue, this.fogEnd.defaultValue * density);
             this.caveFogColors[0].interpolate();
             this.caveFogColors[1].interpolate();
             this.caveFogColors[2].interpolate();
@@ -111,12 +112,12 @@ public class FogManager {
         this.darkness.interpolate(darknessAffectedFog[2]);
         this.fogStart.interpolate(darknessAffectedFog[0]);
         this.fogEnd.interpolate(darknessAffectedFog[1]);
+        this.caveFogStart.interpolate(darknessAffectedFog[0]);
 
         this.currentSkyLight.interpolate(mc.level.getBrightness(LightLayer.SKY, pos));
         this.currentBlockLight.interpolate(mc.level.getBrightness(LightLayer.BLOCK, pos));
         this.currentLight.interpolate(mc.level.getRawBrightness(pos, 0));
 
-        boolean isAboveGround =  pos.getY() > mc.level.getHeight(Heightmap.Types.WORLD_SURFACE, pos.getX(), pos.getZ()) || pos.getY() > mc.level.getSeaLevel();
         if (isAboveGround) { this.undergroundness.interpolate(0.0F, 0.05f); } else { this.undergroundness.interpolate(1.0F); }
     }
 
@@ -148,6 +149,7 @@ public class FogManager {
         float darknessValue = 0.0F;
         this.fogEnd.interpolationSpeed = 0.05f;
         this.fogStart.interpolationSpeed = 0.05f;
+        this.caveFogStart.interpolationSpeed = 0.05f;
         if (entity instanceof LivingEntity e) {
             if (e.hasEffect(MobEffects.BLINDNESS)) {
                 fogStart = (4 * 16) / renderDistance;
@@ -159,15 +161,14 @@ public class FogManager {
                     float factor = this.mc.options.darknessEffectScale().get().floatValue();
                     float intensity = effect.getFactorData().get().getFactor(e, mc.getDeltaFrameTime()) * factor;
                     float darkness = 1 - (calculateDarknessScale(e, effect.getFactorData().get().getFactor(e, mc.getDeltaFrameTime()), mc.getDeltaFrameTime()));
-                    FLG.LOGGER.info("" + intensity);
+                    FLG.LOGGER.info(String.valueOf(intensity));
                     fogStart = ((8.0F * 16) / renderDistance) * darkness;
                     fogEnd = ((15.0F * 16) / renderDistance);
                     darknessValue = effect.getFactorData().get().getFactor(e, mc.getDeltaFrameTime());
                 }
             }
         }
-
-        return new float[]{fogStart, fogEnd, darknessValue};
+        return new float[] { fogStart, fogEnd, darknessValue };
     }
 
     private float calculateDarknessScale(LivingEntity pEntity, float darknessFactor, float partialTicks) {
@@ -176,12 +177,18 @@ public class FogManager {
         return Math.max(0.0F, Mth.cos(((float)pEntity.tickCount - partialTicks) * (float)Math.PI * 0.025F) * f) * factor;
     }
 
+    public static FogManager getDensityManager() {
+        return Objects.requireNonNull(densityManager, "Attempted to call getDensityManager before it finished loading!");
+    }
+    public static Optional<FogManager> getDensityManagerOptional() {
+        return Optional.ofNullable(densityManager);
+    }
 
-    public void close() {}
+//    public void close() {}
 
     public record BiomeFogDensity(float fogStart, float fogDensity, int caveFogColor) {};
 
-    public class InterpolatedValue {
+    public static class InterpolatedValue {
         public float defaultValue;
 
         private float interpolationSpeed;
@@ -234,5 +241,4 @@ public class FogManager {
             return Mth.lerp(partialTick, previousValue, currentValue);
         }
     }
-
 }

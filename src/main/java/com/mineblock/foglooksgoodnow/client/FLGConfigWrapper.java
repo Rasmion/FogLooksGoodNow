@@ -24,6 +24,9 @@ public class FLGConfigWrapper {
     public boolean useCaveFog = true;
     @RangeConstraint(min = 0, max = 1)
     @Hook
+    public double caveFogStart = 0.0D;
+    @RangeConstraint(min = 0, max = 1)
+    @Hook
     public double caveFogDensity = 0.8D;
     @Hook
     public int caveFogColor = 3355443;
